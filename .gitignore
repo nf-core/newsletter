@@ -211,6 +211,11 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# CDK
+infra/cdk.out/
+infra/cdk.context.json
+node_modules/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
