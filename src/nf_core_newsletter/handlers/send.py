@@ -29,7 +29,7 @@ def _resolve_edition(event: dict[str, Any]) -> content.Edition:
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     edition = _resolve_edition(event if isinstance(event, dict) else {})
-    html = content.add_unsubscribe_footer(content.fetch_email_html(edition))
+    html = content.fetch_email_html(edition)
     logger.info("Sending edition %04d-%02d: %s", edition.year, edition.month, edition.title)
 
     # Sleep only when ahead of schedule, so per-call API latency isn't

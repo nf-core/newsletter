@@ -45,20 +45,6 @@ def test_latest_edition_no_items(monkeypatch: pytest.MonkeyPatch) -> None:
         content.latest_edition()
 
 
-def test_add_unsubscribe_footer_before_body_close() -> None:
-    html = "<html><body><p>Edition</p></body></html>"
-    out = content.add_unsubscribe_footer(html)
-    assert "{{amazonSESUnsubscribeUrl}}" in out
-    assert out.index("{{amazonSESUnsubscribeUrl}}") < out.index("</body>")
-    assert out.count("</body>") == 1
-
-
-def test_add_unsubscribe_footer_no_body_tag() -> None:
-    out = content.add_unsubscribe_footer("<p>no body tag</p>")
-    assert out.endswith("</table>")
-    assert "{{amazonSESUnsubscribeUrl}}" in out
-
-
 def test_absolutize_urls() -> None:
     html = (
         '<img src="/_astro/logo.png">'
