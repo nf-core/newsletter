@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [main]
 
 # Minimal default; the deploy job alone gets id-token for AWS OIDC.
 permissions:
