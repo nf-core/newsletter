@@ -94,3 +94,30 @@ def absolutize_urls(html: str) -> str:
 def fetch_email_html(edition: Edition) -> str:
     """Fetch the rendered, email-ready HTML for an edition, with absolute URLs."""
     return absolutize_urls(_fetch(edition.email_url))
+
+
+# SES only renders an in-body unsubscribe link where this placeholder appears
+# (otherwise it just adds List-Unsubscribe headers). It's replaced with the
+# hosted unsubscribe URL when the email is sent with ListManagementOptions, so
+# the placeholder must survive verbatim in the HTML body.
+_UNSUBSCRIBE_FOOTER = (
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;">'
+    '<tr><td style="padding:24px 20px;border-top:1px solid #eeeeee;text-align:center;'
+    "font-size:12px;line-height:1.6;color:#888888;"
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;\">"
+    "You're receiving this because you subscribed to the nf-core newsletter at nf-co.re.<br>"
+    '<a href="{{amazonSESUnsubscribeUrl}}" style="color:#888888;text-decoration:underline;">Unsubscribe</a>'
+    "</td></tr></table>"
+)
+_BODY_CLOSE_RE = re.compile(r"</body>", re.IGNORECASE)
+
+
+def add_unsubscribe_footer(html: str) -> str:
+    """Insert the SES unsubscribe-placeholder footer just before ``</body>``.
+
+    Added at send time (every edition uses ListManagementOptions), so SES turns
+    the placeholder into a working one-click unsubscribe link in the footer.
+    """
+    if _BODY_CLOSE_RE.search(html):
+        return _BODY_CLOSE_RE.sub(lambda m: _UNSUBSCRIBE_FOOTER + m.group(0), html, count=1)
+    return html + _UNSUBSCRIBE_FOOTER
