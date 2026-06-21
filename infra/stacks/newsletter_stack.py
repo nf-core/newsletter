@@ -102,7 +102,7 @@ class NfCoreNewsletterStack(Stack):
         # ── SES configuration set ────────────────────────────────────────────
         # Attached to every SendEmail so engagement/bounce metrics are tracked
         # and (later) event destinations can be added without touching senders.
-        config_set = ses.ConfigurationSet(self, "ConfigSet", configuration_set_name=CONFIGURATION_SET_NAME)
+        ses.ConfigurationSet(self, "ConfigSet", configuration_set_name=CONFIGURATION_SET_NAME)
 
         # ── Shared Lambda config ─────────────────────────────────────────────
         code = lambda_.Code.from_asset(str(SRC_DIR), exclude=["**/__pycache__", "**/*.pyc"])

@@ -30,12 +30,12 @@ EventBridge Scheduler (monthly) ─► send Lambda
            suppression handled by SES automatically)
 ```
 
-| Component       | Resource                                                  |
-| --------------- | --------------------------------------------------------- |
-| Contact storage | SES contact list + `monthly-newsletter` topic             |
-| Sign-up API     | API Gateway HTTP API + `subscribe` / `confirm` Lambdas    |
-| Monthly send    | EventBridge Scheduler → `send` Lambda                     |
-| Email sending   | SES (API v2) + a configuration set                        |
+| Component       | Resource                                                          |
+| --------------- | ----------------------------------------------------------------- |
+| Contact storage | SES contact list + `monthly-newsletter` topic                     |
+| Sign-up API     | API Gateway HTTP API + `subscribe` / `confirm` Lambdas            |
+| Monthly send    | EventBridge Scheduler → `send` Lambda                             |
+| Email sending   | SES (API v2) + a configuration set                                |
 | Secrets         | Pre-created SSM SecureString params under `/nf-core-newsletter/*` |
 
 The double opt-in (pending → confirmed) keeps the list GDPR-compliant; consent
@@ -104,5 +104,5 @@ expected list size; very large lists would need an SES rate increase and/or
 fanning the send across invocations.
 
 The fetched `/email` HTML is sent whole; `content.absolutize_urls` rewrites the
-website's root-relative image and asset URLs to absolute `https://nf-co.re/…`
-so they render in email clients.
+website's root-relative image and asset URLs to absolute `https://nf-co.re/…` so
+they render in email clients.
