@@ -2,21 +2,22 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [master]
 
-# id-token for AWS OIDC; no GHCR push (compute is Lambda, deployed via CDK)
+# Minimal default; the deploy job alone gets id-token for AWS OIDC.
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   # ── CI checks (same as ci.yml) ──────────────────────────────────────
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
           cache: "pip"
@@ -39,16 +40,21 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # AWS OIDC
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: eu-west-1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.12"
           cache: "pip"

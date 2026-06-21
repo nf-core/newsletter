@@ -1,0 +1,18 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# Run with `prek run --all-files`. See https://prek.j178.dev
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "https://github.com/pre-commit/mirrors-prettier"
+rev = "v4.0.0-alpha.8"
+hooks = [
+    { id = "prettier", types_or = ["markdown", "yaml"] },
+]
+
+[[repos]]
+repo = "https://github.com/astral-sh/ruff-pre-commit"
+rev = "v0.8.6"
+hooks = [
+    { id = "ruff", args = ["--fix"] },
+    { id = "ruff-format" },
+]
