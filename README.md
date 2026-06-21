@@ -98,11 +98,29 @@ one contact list per account, so this stack owns it.
 ## Sending
 
 The `send` Lambda sends one SES `SendEmail` per subscribed contact, paced to the
-account's SES send rate, with `ListManagementOptions` set so SES injects the
-unsubscribe link and applies suppression. A single monthly invocation covers the
-expected list size; very large lists would need an SES rate increase and/or
-fanning the send across invocations.
+account's SES send rate, with `ListManagementOptions` set so SES adds the
+`List-Unsubscribe` headers (one-click unsubscribe) and applies suppression. A
+single monthly invocation covers the expected list size; very large lists would
+need an SES rate increase and/or fanning the send across invocations.
 
 The fetched `/email` HTML is sent whole; `content.absolutize_urls` rewrites the
 website's root-relative image and asset URLs to absolute `https://nf-co.re/…` so
 they render in email clients.
+
+### Unsubscribe
+
+The footer unsubscribe link comes from the `{{amazonSESUnsubscribeUrl}}`
+placeholder, which the **website** email template renders (SES does _not_ add a
+body link automatically — it only adds the `List-Unsubscribe` headers). SES
+replaces the placeholder per-recipient at send time and hosts the unsubscribe /
+subscription-preferences landing page.
+
+> **Note: the SES-hosted unsubscribe page cannot be customised.** Its branding,
+> layout, and boilerplate text are fixed by AWS — including the "You will still
+> receive important transactional and billing-related emails" line (inaccurate
+> for nf-core, which has neither) and the multi-type "Choose which types of
+> email communications…" framing (we only have one topic). The only things we
+> control are the topic **name** and **description** (set on the contact list).
+> Making the page nf-core-branded with accurate wording would require replacing
+> it with a self-hosted unsubscribe endpoint + landing page. Decision (2026-06):
+> not worth it for now — we accept the generic AWS page.
