@@ -185,12 +185,20 @@ class NfCoreNewsletterStack(Stack):
         grant_send(send_fn, list_management=True)
 
         # ── HTTP API (double opt-in only) ────────────────────────────────────
+        # CORS allows the production origin; an extra origin (e.g. a website
+        # deploy-preview) can be added for testing without committing it:
+        #   cdk deploy -c extra_cors_origin=https://deploy-preview-N--....netlify.app
+        cors_origins = [ALLOWED_ORIGIN]
+        extra_origin = self.node.try_get_context("extra_cors_origin")
+        if extra_origin:
+            cors_origins.append(extra_origin)
+
         http_api = apigwv2.HttpApi(
             self,
             "HttpApi",
             api_name="nf-core-newsletter",
             cors_preflight=apigwv2.CorsPreflightOptions(
-                allow_origins=[ALLOWED_ORIGIN],
+                allow_origins=cors_origins,
                 allow_methods=[apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.GET],
                 allow_headers=["content-type"],
             ),
