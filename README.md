@@ -14,20 +14,20 @@ Fully serverless on AWS (`eu-west-1`), deployed with AWS CDK (Python). Amazon
 unsubscribe page, suppression, and bounce/complaint handling, so there is **no
 database and no bounce Lambda**. We build only the double-opt-in flow SES lacks.
 
-```
-sign-up form (nf-co.re)
-        │  POST { email }
-        ▼
-API Gateway HTTP API ──► subscribe Lambda ─► SES CreateContact (OPT_OUT)
-        │                                     + SES SendEmail (confirm link)
-        │  GET /confirm?token=…
-        └──────────────► confirm  Lambda ─► SES UpdateContact (topic OPT_IN)
+```mermaid
+flowchart TD
+    form["Sign-up form on nf-co.re"] -->|"POST /subscribe { email }"| api["API Gateway HTTP API"]
+    inbox["Recipient clicks confirm link"] -->|"GET /confirm?token"| api
+    api -->|"POST /subscribe"| subscribe["subscribe Lambda"]
+    api -->|"GET /confirm"| confirm["confirm Lambda"]
+    subscribe -->|"CreateContact (OPT_OUT)<br/>+ SendEmail confirmation"| ses[("Amazon SES<br/>contact list + monthly-newsletter topic")]
+    confirm -->|"UpdateContact (topic OPT_IN)"| ses
+    ses -.->|"confirmation email"| inbox
 
-EventBridge Scheduler (monthly) ─► send Lambda
-        ├─ fetch /newsletter/<y>/<m>/email HTML from nf-co.re
-        ├─ SES ListContacts (subscribed to the newsletter topic)
-        └─ SES SendEmail per recipient (ListManagementOptions → unsubscribe +
-           suppression handled by SES automatically)
+    scheduler["EventBridge Scheduler (monthly)"] --> send["send Lambda"]
+    site["nf-co.re /newsletter/.../email"] -->|"fetch edition HTML"| send
+    send -->|"ListContacts (subscribed)<br/>SendEmail per recipient<br/>(ListManagementOptions)"| ses
+    ses -.->|"monthly edition<br/>+ unsubscribe &amp; suppression"| subs["Subscribers"]
 ```
 
 | Component       | Resource                                                          |
@@ -115,12 +115,14 @@ body link automatically — it only adds the `List-Unsubscribe` headers). SES
 replaces the placeholder per-recipient at send time and hosts the unsubscribe /
 subscription-preferences landing page.
 
-> **Note: the SES-hosted unsubscribe page cannot be customised.** Its branding,
-> layout, and boilerplate text are fixed by AWS — including the "You will still
-> receive important transactional and billing-related emails" line (inaccurate
-> for nf-core, which has neither) and the multi-type "Choose which types of
-> email communications…" framing (we only have one topic). The only things we
-> control are the topic **name** and **description** (set on the contact list).
-> Making the page nf-core-branded with accurate wording would require replacing
-> it with a self-hosted unsubscribe endpoint + landing page. Decision (2026-06):
-> not worth it for now — we accept the generic AWS page.
+<!-- prettier-ignore -->
+> [!NOTE]
+> The SES-hosted unsubscribe page **cannot be customised**. Its branding, layout,
+> and boilerplate text are fixed by AWS — including the "You will still receive
+> important transactional and billing-related emails" line (inaccurate for
+> nf-core, which has neither) and the multi-type "Choose which types of email
+> communications…" framing (we only have one topic). The only things we control
+> are the topic **name** and **description** (set on the contact list). Making the
+> page nf-core-branded with accurate wording would require replacing it with a
+> self-hosted unsubscribe endpoint + landing page. Decision (2026-06): not worth
+> it for now — we accept the generic AWS page.
