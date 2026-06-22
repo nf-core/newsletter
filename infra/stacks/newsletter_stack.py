@@ -53,15 +53,10 @@ WEBSITE_BASE_URL = "https://nf-co.re"
 RSS_URL = "https://nf-co.re/newsletter/rss.xml"
 ALLOWED_ORIGIN = "https://nf-co.re"  # CORS origin for the sign-up form
 
-# nf-core/newsletter logo for the confirm email + landing page.
-# TODO: switch to the stable https://nf-co.re/images/logo/nf-core-newsletter-lightbg.png
-# once the website PR that adds it to public/images/logo/ is deployed. Until then,
-# point at the asset on the website feature branch so the image renders.
-LOGO_URL = (
-    "https://raw.githubusercontent.com/nf-core/website/"
-    "claude/nf-core-newsletter-page-XyTgs/"
-    "sites/main-site/src/assets/images/logo/nf-core-newsletter-lightbg.png"
-)
+# nf-core/newsletter logo for the confirm email + landing page (white background
+# baked into the PNG so it reads in dark mode). Served from the website's public/
+# dir; resolves once the website newsletter pages are live on nf-co.re.
+LOGO_URL = "https://nf-co.re/images/logo/nf-core-newsletter-lightbg.png"
 
 # Pre-created SSM SecureString — HMAC key used to sign/verify confirm tokens.
 CONFIRM_TOKEN_SECRET_PARAM = "/nf-core-newsletter/CONFIRM_TOKEN_SECRET"
