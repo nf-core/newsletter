@@ -34,7 +34,7 @@ flowchart TD
 | --------------- | ----------------------------------------------------------------- |
 | Contact storage | SES contact list + `monthly-newsletter` topic                     |
 | Sign-up API     | API Gateway HTTP API + `subscribe` / `confirm` Lambdas            |
-| Monthly send    | EventBridge Scheduler → `send` Lambda                             |
+| Monthly send    | EventBridge Scheduler (first Wednesday, 09:00 UTC) → `send` Lambda |
 | Email sending   | SES (API v2) + a configuration set                                |
 | Secrets         | Pre-created SSM SecureString params under `/nf-core-newsletter/*` |
 

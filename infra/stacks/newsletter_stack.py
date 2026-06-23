@@ -61,8 +61,9 @@ LOGO_URL = "https://nf-co.re/images/logo/nf-core-newsletter-lightbg.png"
 # Pre-created SSM SecureString — HMAC key used to sign/verify confirm tokens.
 CONFIRM_TOKEN_SECRET_PARAM = "/nf-core-newsletter/CONFIRM_TOKEN_SECRET"
 
-# Monthly send: 09:00 UTC on the 1st of every month.
-SEND_SCHEDULE = "cron(0 9 1 * ? *)"
+# Monthly send: 09:00 UTC on the first Wednesday of every month.
+# `4#1` = first Wednesday (AWS cron day-of-week is Sun=1 … Sat=7).
+SEND_SCHEDULE = "cron(0 9 ? * 4#1 *)"
 
 # Per-recipient send pace (emails/sec); matches the SES account max send rate.
 SEND_RATE_PER_SEC = "14"
