@@ -121,9 +121,26 @@ requires typing `SEND` in the confirmation box.
 
 The workflow assumes the OIDC role in the `AWS_ROLE_ARN` secret and invokes the
 send Lambda (resolved from the `SendFunctionName` stack output). That role must
-be allowed to `lambda:InvokeFunction` on the send function — the deploy role
-only has deploy permissions by default, so grant this out-of-band if it isn't
-already present.
+be allowed to `cloudformation:DescribeStacks` on the stack (to resolve the
+function name) and `lambda:InvokeFunction` on the send function. The deploy role
+only has deploy permissions by default, so these are provisioned out-of-band —
+the role itself is not created by `cdk deploy` (it's the role CDK assumes). Add
+them wherever the role's policy is managed, e.g.:
+
+```bash
+aws iam put-role-policy \
+  --role-name nf-core-newsletter-github-actions \
+  --policy-name send-newsletter-invoke \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {"Effect": "Allow", "Action": "cloudformation:DescribeStacks",
+       "Resource": "arn:aws:cloudformation:eu-west-1:*:stack/NfCoreNewsletterStack/*"},
+      {"Effect": "Allow", "Action": "lambda:InvokeFunction",
+       "Resource": "arn:aws:lambda:eu-west-1:*:function:NfCoreNewsletterStack-SendFn*"}
+    ]
+  }'
+```
 
 ### Recency check
 
