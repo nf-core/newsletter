@@ -9,9 +9,10 @@ name: Send newsletter
 # - Set BOTH `year` and `month` to (re)send a specific edition. An explicit
 #   edition is treated as a deliberate send and bypasses the recency guard.
 #
-# Requires the OIDC role in `AWS_ROLE_ARN` to have `lambda:InvokeFunction` on the
-# send function (the deploy role only has deploy permissions by default — see the
-# README "Sending" section).
+# Requires the OIDC role in `AWS_ROLE_ARN` to have `cloudformation:DescribeStacks`
+# on the stack (to resolve the function name) and `lambda:InvokeFunction` on the
+# send function. The deploy role only has deploy permissions by default, so these
+# must be granted out-of-band — see the README "Sending" section.
 
 on:
   workflow_dispatch:
