@@ -107,6 +107,18 @@ The fetched `/email` HTML is sent whole; `content.absolutize_urls` rewrites the
 website's root-relative image and asset URLs to absolute `https://nf-co.re/…` so
 they render in email clients.
 
+### Recency check
+
+On the scheduled path the `send` Lambda resolves the latest edition from the RSS
+feed. If the website hasn't published the current month's newsletter yet, that
+"latest" is still last month's edition — which was already sent — so a naive send
+would mail it a second time. To guard against this, the handler skips the send
+unless the resolved edition is for the current calendar month (`content.is_current`),
+logging a warning and returning `{"skipped": "stale-edition"}` instead. To send
+anyway, invoke the Lambda with an explicit `{"year": <y>, "month": <m>}` payload
+(a deliberate re-send) or with `{"force": true}` to override the check on the
+latest edition.
+
 ### Unsubscribe
 
 The footer unsubscribe link comes from the `{{amazonSESUnsubscribeUrl}}`

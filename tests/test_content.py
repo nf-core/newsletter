@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from nf_core_newsletter import content
@@ -43,6 +45,14 @@ def test_latest_edition_no_items(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(content, "_fetch", lambda _url: "<rss><channel></channel></rss>")
     with pytest.raises(RuntimeError):
         content.latest_edition()
+
+
+def test_is_current() -> None:
+    now = datetime(2026, 6, 3, tzinfo=UTC)
+    assert content.is_current(content.edition_for(2026, 6), now=now)  # this month
+    assert not content.is_current(content.edition_for(2026, 5), now=now)  # last month, stale
+    assert not content.is_current(content.edition_for(2025, 12), now=now)  # prior year
+    assert content.is_current(content.edition_for(2026, 7), now=now)  # future editions are not stale
 
 
 def test_absolutize_urls() -> None:
