@@ -30,13 +30,13 @@ flowchart TD
     ses -.->|"monthly edition<br/>+ unsubscribe &amp; suppression"| subs["Subscribers"]
 ```
 
-| Component       | Resource                                                          |
-| --------------- | ----------------------------------------------------------------- |
-| Contact storage | SES contact list + `monthly-newsletter` topic                     |
-| Sign-up API     | API Gateway HTTP API + `subscribe` / `confirm` Lambdas            |
+| Component       | Resource                                                           |
+| --------------- | ------------------------------------------------------------------ |
+| Contact storage | SES contact list + `monthly-newsletter` topic                      |
+| Sign-up API     | API Gateway HTTP API + `subscribe` / `confirm` Lambdas             |
 | Monthly send    | EventBridge Scheduler (first Wednesday, 09:00 UTC) → `send` Lambda |
-| Email sending   | SES (API v2) + a configuration set                                |
-| Secrets         | Pre-created SSM SecureString params under `/nf-core-newsletter/*` |
+| Email sending   | SES (API v2) + a configuration set                                 |
+| Secrets         | Pre-created SSM SecureString params under `/nf-core-newsletter/*`  |
 
 The double opt-in (pending → confirmed) keeps the list GDPR-compliant; consent
 timestamp and source IP are stored on the SES contact, and every send carries a
@@ -129,13 +129,13 @@ already present.
 
 On the scheduled path the `send` Lambda resolves the latest edition from the RSS
 feed. If the website hasn't published the current month's newsletter yet, that
-"latest" is still last month's edition — which was already sent — so a naive send
-would mail it a second time. To guard against this, the handler skips the send
-unless the resolved edition is for the current calendar month (`content.is_current`),
-logging a warning and returning `{"skipped": "stale-edition"}` instead. To send
-anyway, invoke the Lambda with an explicit `{"year": <y>, "month": <m>}` payload
-(a deliberate re-send) or with `{"force": true}` to override the check on the
-latest edition.
+"latest" is still last month's edition — which was already sent — so a naive
+send would mail it a second time. To guard against this, the handler skips the
+send unless the resolved edition is for the current calendar month
+(`content.is_current`), logging a warning and returning
+`{"skipped": "stale-edition"}` instead. To send anyway, invoke the Lambda with
+an explicit `{"year": <y>, "month": <m>}` payload (a deliberate re-send) or with
+`{"force": true}` to override the check on the latest edition.
 
 ### Unsubscribe
 

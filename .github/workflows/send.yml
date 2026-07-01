@@ -29,7 +29,9 @@ on:
         required: false
         default: ""
       force:
-        description: "Send the latest edition even if it is not the current month (ignored when year/month are set)"
+        description:
+          "Send the latest edition even if it is not the current month (ignored
+          when year/month are set)"
         type: boolean
         required: false
         default: false
