@@ -235,6 +235,7 @@ class NfCoreNewsletterStack(Stack):
         # ── Outputs ──────────────────────────────────────────────────────────
         CfnOutput(self, "ApiEndpoint", value=http_api.api_endpoint)
         CfnOutput(self, "SubscribeUrl", value=f"{http_api.api_endpoint}/subscribe")
+        CfnOutput(self, "SendFunctionName", value=send_fn.function_name)
         CfnOutput(self, "ContactListName", value=CONTACT_LIST_NAME)
         CfnOutput(self, "TopicName", value=TOPIC_NAME)
         CfnOutput(self, "ConfigurationSetName", value=CONFIGURATION_SET_NAME)

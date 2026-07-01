@@ -1,0 +1,120 @@
+name: Send newsletter
+
+# Manually trigger a newsletter send. This mails the real newsletter to every
+# live subscriber, so it is gated behind a typed confirmation.
+#
+# - Leave `year` and `month` blank to send the latest edition (same behaviour as
+#   the monthly EventBridge schedule, including the "not the current month"
+#   recency guard — use `force` to override it).
+# - Set BOTH `year` and `month` to (re)send a specific edition. An explicit
+#   edition is treated as a deliberate send and bypasses the recency guard.
+#
+# Requires the OIDC role in `AWS_ROLE_ARN` to have `lambda:InvokeFunction` on the
+# send function (the deploy role only has deploy permissions by default — see the
+# README "Sending" section).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type SEND to confirm you want to email all subscribers"
+        required: true
+        default: ""
+      year:
+        description: "Edition year, e.g. 2026 (blank = latest edition)"
+        required: false
+        default: ""
+      month:
+        description: "Edition month 1-12 (blank = latest edition)"
+        required: false
+        default: ""
+      force:
+        description: "Send the latest edition even if it is not the current month (ignored when year/month are set)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # AWS OIDC
+    steps:
+      - name: Build and validate payload
+        id: payload
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          YEAR: ${{ inputs.year }}
+          MONTH: ${{ inputs.month }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+
+          if [ "$CONFIRM" != "SEND" ]; then
+            echo "::error::You must type SEND in the confirm box to run this workflow."
+            exit 1
+          fi
+
+          if [ -n "$YEAR" ] && [ -n "$MONTH" ]; then
+            case "$YEAR" in ''|*[!0-9]*) echo "::error::year must be a number"; exit 1;; esac
+            case "$MONTH" in ''|*[!0-9]*) echo "::error::month must be a number"; exit 1;; esac
+            if [ "$MONTH" -lt 1 ] || [ "$MONTH" -gt 12 ]; then
+              echo "::error::month must be between 1 and 12"; exit 1
+            fi
+            payload=$(printf '{"year":%d,"month":%d}' "$YEAR" "$MONTH")
+          elif [ -z "$YEAR" ] && [ -z "$MONTH" ]; then
+            if [ "$FORCE" = "true" ]; then
+              payload='{"force":true}'
+            else
+              payload='{}'
+            fi
+          else
+            echo "::error::Set BOTH year and month to send a specific edition, or neither to send the latest."
+            exit 1
+          fi
+
+          echo "Invoking send Lambda with payload: $payload"
+          echo "payload=$payload" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: Resolve send function name
+        id: fn
+        run: |
+          set -euo pipefail
+          name=$(aws cloudformation describe-stacks \
+            --stack-name NfCoreNewsletterStack \
+            --query "Stacks[0].Outputs[?OutputKey=='SendFunctionName'].OutputValue" \
+            --output text)
+          if [ -z "$name" ] || [ "$name" = "None" ]; then
+            echo "::error::Could not resolve the SendFunctionName stack output; is the stack deployed?"
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Invoke send Lambda
+        run: |
+          set -euo pipefail
+          echo "==== Lambda logs ===="
+          aws lambda invoke \
+            --function-name '${{ steps.fn.outputs.name }}' \
+            --cli-binary-format raw-in-base64-out \
+            --payload '${{ steps.payload.outputs.payload }}' \
+            --log-type Tail \
+            --query 'LogResult' --output text \
+            response.json | base64 --decode
+          echo "==== Function response ===="
+          cat response.json
+          echo
+          if grep -q '"errorMessage"' response.json; then
+            echo "::error::The send Lambda returned an error (see response above)."
+            exit 1
+          fi
