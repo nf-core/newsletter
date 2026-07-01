@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import urllib.request
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
 
@@ -77,6 +78,24 @@ def latest_edition() -> Edition:
     if best is None:
         raise RuntimeError("No newsletter editions found in the RSS feed")
     return best[1]
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def is_current(edition: Edition, *, now: datetime | None = None) -> bool:
+    """True if ``edition`` is for the current calendar month (UTC).
+
+    The monthly scheduler fires on the first Wednesday and expects *that*
+    month's edition. If the website hasn't published it yet, ``latest_edition``
+    returns the previous month's edition — which was already sent last month —
+    so the ``send`` handler uses this as a guard to avoid mailing an old
+    edition twice. A future-dated edition (should one ever appear) counts as
+    current; only editions older than this month are treated as stale.
+    """
+    reference = now or _now()
+    return (edition.year, edition.month) >= (reference.year, reference.month)
 
 
 def absolutize_urls(html: str) -> str:
