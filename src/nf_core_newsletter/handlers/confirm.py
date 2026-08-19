@@ -1,7 +1,8 @@
 """GET /confirm?token=... — complete the double-opt-in flow.
 
 1. Verify the HMAC token (valid signature + not expired) and recover the email.
-2. Flip the SES contact to OPT_IN on the topic and record `confirmed_at`.
+2. Flip the SES contact to OPT_IN on the topic and record `confirmed_at` and
+   `confirm_ip` (who actually clicked, as opposed to who was signed up).
 3. Return a friendly HTML landing page.
 """
 
@@ -16,6 +17,11 @@ from nf_core_newsletter.tokens import verify_token
 
 # Confirmation links are valid for 7 days.
 _MAX_AGE_SECONDS = 7 * 24 * 3600
+
+
+def _source_ip(event: dict[str, Any]) -> str:
+    http = event.get("requestContext", {}).get("http", {})
+    return str(http.get("sourceIp", ""))
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -42,6 +48,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     attributes = ses.contact_attributes(contact)
     attributes[ses.ATTR_CONFIRMED_AT] = datetime.now(UTC).isoformat()
+    attributes[ses.ATTR_CONFIRM_IP] = _source_ip(event)
     ses.confirm_contact(email, attributes)
 
     return html_response(
