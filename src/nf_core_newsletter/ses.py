@@ -27,6 +27,7 @@ OPT_OUT: Literal["OPT_OUT"] = "OPT_OUT"
 ATTR_SIGNUP_IP = "signup_ip"
 ATTR_SIGNUP_AT = "signup_at"
 ATTR_CONFIRMED_AT = "confirmed_at"
+ATTR_CONFIRM_IP = "confirm_ip"
 
 _client: SESV2Client | None = None
 

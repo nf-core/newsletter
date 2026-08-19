@@ -88,12 +88,60 @@ build and ECS restart (compute here is Lambda, deployed by CDK).
   addresses).
 - The **SSM SecureString** `/nf-core-newsletter/CONFIRM_TOKEN_SECRET` — the HMAC
   key used to sign confirmation tokens.
+- The **SSM SecureString** `/nf-core-newsletter/TURNSTILE_SECRET` — the
+  Cloudflare Turnstile secret key used to verify sign-up form submissions (see
+  "Turnstile CAPTCHA" below).
 - The **`AWS_ROLE_ARN` repo secret**, pointing at the GitHub Actions OIDC deploy
   role.
 
 The SES contact list, its `monthly-newsletter` topic, and the configuration set
 are created by CDK (the contact list is retained on stack deletion). SES allows
 one contact list per account, so this stack owns it.
+
+## Turnstile CAPTCHA
+
+`POST /subscribe` is a public, unauthenticated endpoint, which makes it an
+attractive spam relay: an attacker submits harvested third-party email addresses
+and SES mails each victim a confirmation request, generating ISP complaints
+against our SES sending reputation. A resend cooldown and an API-wide throttle
+help but don't stop a low-and-slow attacker using fresh addresses each time —
+[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)
+verification at submit time is the actual fix.
+
+Set up:
+
+1. Create a Turnstile widget in the Cloudflare dashboard for the `nf-co.re`
+   site. This gives you two keys:
+   - The **site key** is public — it belongs in the sign-up form's HTML
+     ([nf-core/website](https://github.com/nf-core/website)), not in this repo.
+   - The **secret key** is not public. Store it as the SSM SecureString
+     `/nf-core-newsletter/TURNSTILE_SECRET`:
+     ```bash
+     aws ssm put-parameter \
+       --name /nf-core-newsletter/TURNSTILE_SECRET \
+       --type SecureString \
+       --value '<turnstile-secret-key>'
+     ```
+2. The sign-up form includes the widget's token in the POST body as
+   `cf-turnstile-response`, alongside `email`. The `subscribe` Lambda verifies
+   it server-side against Cloudflare's `siteverify` endpoint before creating any
+   SES contact or sending any email — an unverified request costs nothing.
+3. **Enforcement is off by default** (see `ENABLE_TURNSTILE` in
+   `infra/stacks/newsletter_stack.py`), since the Lambda ships before the
+   website form does — deploying with enforcement on before the form sends a
+   token would reject every real sign-up. Once the form is live, turn
+   enforcement on with either:
+   ```bash
+   cdk deploy -c enable_turnstile=true
+   ```
+   or by flipping `ENABLE_TURNSTILE = True` in the stack and deploying normally.
+   This controls whether the subscribe Lambda's `TURNSTILE_SECRET_PARAM` env var
+   is set at all — unset/empty means verification is skipped and the endpoint is
+   unprotected, so leaving it off is a deliberate, temporary state.
+
+If Cloudflare is unreachable, times out, or returns `success: false`, the
+handler fails **closed** (no send) rather than open — a spam relay that reopens
+whenever Cloudflare has a wobble isn't a fix.
 
 ## Sending
 

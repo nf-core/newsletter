@@ -26,6 +26,21 @@ def test_valid_token_opts_in(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["attrs"]["signup_at"] == "x"  # existing attributes preserved
 
 
+def test_confirm_records_source_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(ses, "get_contact", lambda _email: {"AttributesData": json.dumps({})})
+    monkeypatch.setattr(ses, "confirm_contact", lambda email, attrs: captured.update(attrs=attrs))
+
+    event = {
+        "queryStringParameters": {"token": make_token("a@b.com")},
+        "requestContext": {"http": {"sourceIp": "9.9.9.9"}},
+    }
+    resp = confirm.handler(event, None)
+
+    assert resp["statusCode"] == 200
+    assert captured["attrs"]["confirm_ip"] == "9.9.9.9"
+
+
 def test_bad_token_returns_400() -> None:
     resp = confirm.handler({"queryStringParameters": {"token": "garbage"}}, None)
     assert resp["statusCode"] == 400
