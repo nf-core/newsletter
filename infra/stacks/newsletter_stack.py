@@ -27,11 +27,14 @@ from aws_cdk import (
     Tags,
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as apigwv2_integrations,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions,
     aws_iam as iam,
     aws_lambda as lambda_,
     aws_logs as logs,
     aws_scheduler as scheduler,
     aws_ses as ses,
+    aws_sns as sns,
 )
 from constructs import Construct
 
@@ -67,6 +70,19 @@ SEND_SCHEDULE = "cron(0 9 ? * 4#1 *)"
 
 # Per-recipient send pace (emails/sec); matches the SES account max send rate.
 SEND_RATE_PER_SEC = "14"
+
+# /subscribe throttle: real humans submitting the sign-up form sit well under
+# this; a script harvesting third-party addresses for a spam relay does not.
+# See the HTTP API section below for how it's wired (per-route stage override).
+SUBSCRIBE_THROTTLE_RATE_LIMIT = 2  # requests/sec, steady-state
+SUBSCRIBE_THROTTLE_BURST_LIMIT = 5  # requests, burst bucket
+
+# SES account reputation alarm thresholds (see the alarms section below).
+# Complaint rate alarms well below AWS's ~0.1% account-review threshold so
+# there's time to react before AWS does; bounce rate alarms around 5%
+# (AWS reviews accounts nearer 10%).
+SES_COMPLAINT_RATE_THRESHOLD = 0.0005  # 0.05%
+SES_BOUNCE_RATE_THRESHOLD = 0.05  # 5%
 
 
 class NfCoreNewsletterStack(Stack):
@@ -210,6 +226,31 @@ class NfCoreNewsletterStack(Stack):
             integration=apigwv2_integrations.HttpLambdaIntegration("ConfirmIntegration", confirm_fn),
         )
 
+        # Throttle /subscribe so bulk sign-up injection can't run at account-default
+        # rate (~10k rps). The apigatewayv2 L2 add_routes() has no throttle knob, so
+        # this reaches into the auto-created default stage's underlying CfnStage and
+        # sets a per-route RouteSettings override — the only place per-route
+        # throttling is actually configurable for HTTP APIs today.
+        #
+        # This limit is shared across every caller of /subscribe — it's NOT per-IP,
+        # since HTTP API throttling has no concept of source IP. A single attacker
+        # can still consume the whole budget and lock out real sign-ups; per-IP
+        # protection is expected to come from CAPTCHA at the form layer, not here.
+        # NOTE: `route_settings` is typed `Any` in the CDK L1 (it's a raw map, not
+        # a modelled CFN property), so CDK does NOT apply its usual PascalCase
+        # mapping here — passing a CfnStage.RouteSettingsProperty struct renders
+        # camelCase keys (throttlingBurstLimit) that CloudFormation's actual
+        # schema doesn't recognise (it wants ThrottlingBurstLimit) and silently
+        # ignores. Pass a plain dict with the real CFN casing instead.
+        cfn_stage = http_api.default_stage.node.default_child
+        assert isinstance(cfn_stage, apigwv2.CfnStage)
+        cfn_stage.route_settings = {
+            "POST /subscribe": {
+                "ThrottlingRateLimit": SUBSCRIBE_THROTTLE_RATE_LIMIT,
+                "ThrottlingBurstLimit": SUBSCRIBE_THROTTLE_BURST_LIMIT,
+            },
+        }
+
         # The subscribe Lambda builds confirmation links pointing back at /confirm.
         subscribe_fn.add_environment("CONFIRM_URL_BASE", f"{http_api.api_endpoint}/confirm")
 
@@ -232,6 +273,39 @@ class NfCoreNewsletterStack(Stack):
             ),
         )
 
+        # ── SES reputation alarms ────────────────────────────────────────────
+        # Reputation.ComplaintRate / Reputation.BounceRate are account-wide SES
+        # metrics (there's one SES account, not one per configuration set), so
+        # this deliberately doesn't build a per-configuration-set pipeline.
+        #
+        # No email address is hardcoded here — subscribe the on-call address to
+        # the topic by hand after deploy (console, or `aws sns subscribe`).
+        alarm_topic = sns.Topic(self, "ReputationAlarmTopic", display_name="nf-core newsletter SES reputation")
+        alarm_action = cw_actions.SnsAction(alarm_topic)
+
+        def reputation_alarm(id: str, metric_name: str, threshold: float) -> None:
+            metric = cloudwatch.Metric(
+                namespace="AWS/SES",
+                metric_name=metric_name,
+                statistic="Average",
+                period=Duration.hours(1),
+            )
+            alarm = cloudwatch.Alarm(
+                self,
+                id,
+                metric=metric,
+                threshold=threshold,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+                # A quiet account with no bounces/complaints publishes no data
+                # points at all — that must not alarm.
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+            )
+            alarm.add_alarm_action(alarm_action)
+
+        reputation_alarm("ComplaintRateAlarm", "Reputation.ComplaintRate", SES_COMPLAINT_RATE_THRESHOLD)
+        reputation_alarm("BounceRateAlarm", "Reputation.BounceRate", SES_BOUNCE_RATE_THRESHOLD)
+
         # ── Outputs ──────────────────────────────────────────────────────────
         CfnOutput(self, "ApiEndpoint", value=http_api.api_endpoint)
         CfnOutput(self, "SubscribeUrl", value=f"{http_api.api_endpoint}/subscribe")
@@ -239,3 +313,4 @@ class NfCoreNewsletterStack(Stack):
         CfnOutput(self, "ContactListName", value=CONTACT_LIST_NAME)
         CfnOutput(self, "TopicName", value=TOPIC_NAME)
         CfnOutput(self, "ConfigurationSetName", value=CONFIGURATION_SET_NAME)
+        CfnOutput(self, "ReputationAlarmTopicArn", value=alarm_topic.topic_arn)
