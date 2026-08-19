@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from nf_core_newsletter import ses
@@ -61,3 +62,63 @@ def test_already_confirmed_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert json.loads(resp["body"])["status"] == "already_subscribed"
     assert sent == []  # no confirmation email re-sent
+
+
+def _unconfirmed_contact(signup_at: str | None) -> dict[str, Any]:
+    attrs: dict[str, Any] = {}
+    if signup_at is not None:
+        attrs["signup_at"] = signup_at
+    return {
+        "TopicPreferences": [{"TopicName": "monthly-newsletter", "SubscriptionStatus": "OPT_OUT"}],
+        "AttributesData": json.dumps(attrs),
+    }
+
+
+def test_repeat_post_within_cooldown_does_not_resend(monkeypatch: pytest.MonkeyPatch) -> None:
+    recent = datetime.now(UTC).isoformat()
+    monkeypatch.setattr(ses, "get_contact", lambda _email: _unconfirmed_contact(recent))
+    upserted: list[Any] = []
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "upsert_unconfirmed", lambda *a: upserted.append(a))
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = subscribe.handler(_event("a@b.com"), None)
+
+    # Identical response to the fresh-send path — no way to distinguish the two.
+    assert resp["statusCode"] == 200
+    assert json.loads(resp["body"]) == {"status": "confirmation_sent"}
+    assert sent == []
+    assert upserted == []
+
+
+def test_repeat_post_after_cooldown_resends(monkeypatch: pytest.MonkeyPatch) -> None:
+    stale = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+    monkeypatch.setattr(ses, "get_contact", lambda _email: _unconfirmed_contact(stale))
+    monkeypatch.setattr(ses, "upsert_unconfirmed", lambda *a: None)
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs) or "msg-1")
+
+    resp = subscribe.handler(_event("a@b.com"), None)
+
+    assert json.loads(resp["body"])["status"] == "confirmation_sent"
+    assert len(sent) == 1
+
+
+def _check_sends_despite_bad_signup_at(monkeypatch: pytest.MonkeyPatch, contact: dict[str, Any]) -> None:
+    monkeypatch.setattr(ses, "get_contact", lambda _email: contact)
+    monkeypatch.setattr(ses, "upsert_unconfirmed", lambda *a: None)
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs) or "msg-1")
+
+    resp = subscribe.handler(_event("a@b.com"), None)
+
+    assert json.loads(resp["body"])["status"] == "confirmation_sent"
+    assert len(sent) == 1
+
+
+def test_missing_signup_at_does_not_crash_and_sends(monkeypatch: pytest.MonkeyPatch) -> None:
+    _check_sends_despite_bad_signup_at(monkeypatch, _unconfirmed_contact(None))
+
+
+def test_malformed_signup_at_does_not_crash_and_sends(monkeypatch: pytest.MonkeyPatch) -> None:
+    _check_sends_despite_bad_signup_at(monkeypatch, _unconfirmed_contact("not-a-timestamp"))
