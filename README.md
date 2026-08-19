@@ -101,13 +101,12 @@ one contact list per account, so this stack owns it.
 ## Turnstile CAPTCHA
 
 `POST /subscribe` is a public, unauthenticated endpoint, which makes it an
-attractive spam relay: an attacker submits harvested third-party email
-addresses and SES mails each victim a confirmation request, generating ISP
-complaints against our SES sending reputation. A resend cooldown and an
-API-wide throttle help but don't stop a low-and-slow attacker using fresh
-addresses each time — [Cloudflare
-Turnstile](https://developers.cloudflare.com/turnstile/) verification at
-submit time is the actual fix.
+attractive spam relay: an attacker submits harvested third-party email addresses
+and SES mails each victim a confirmation request, generating ISP complaints
+against our SES sending reputation. A resend cooldown and an API-wide throttle
+help but don't stop a low-and-slow attacker using fresh addresses each time —
+[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)
+verification at submit time is the actual fix.
 
 Set up:
 
@@ -125,8 +124,8 @@ Set up:
      ```
 2. The sign-up form includes the widget's token in the POST body as
    `cf-turnstile-response`, alongside `email`. The `subscribe` Lambda verifies
-   it server-side against Cloudflare's `siteverify` endpoint before creating
-   any SES contact or sending any email — an unverified request costs nothing.
+   it server-side against Cloudflare's `siteverify` endpoint before creating any
+   SES contact or sending any email — an unverified request costs nothing.
 3. **Enforcement is off by default** (see `ENABLE_TURNSTILE` in
    `infra/stacks/newsletter_stack.py`), since the Lambda ships before the
    website form does — deploying with enforcement on before the form sends a
@@ -135,14 +134,14 @@ Set up:
    ```bash
    cdk deploy -c enable_turnstile=true
    ```
-   or by flipping `ENABLE_TURNSTILE = True` in the stack and deploying
-   normally. This controls whether the subscribe Lambda's `TURNSTILE_SECRET_PARAM`
-   env var is set at all — unset/empty means verification is skipped and the
-   endpoint is unprotected, so leaving it off is a deliberate, temporary state.
+   or by flipping `ENABLE_TURNSTILE = True` in the stack and deploying normally.
+   This controls whether the subscribe Lambda's `TURNSTILE_SECRET_PARAM` env var
+   is set at all — unset/empty means verification is skipped and the endpoint is
+   unprotected, so leaving it off is a deliberate, temporary state.
 
 If Cloudflare is unreachable, times out, or returns `success: false`, the
-handler fails **closed** (no send) rather than open — a spam relay that
-reopens whenever Cloudflare has a wobble isn't a fix.
+handler fails **closed** (no send) rather than open — a spam relay that reopens
+whenever Cloudflare has a wobble isn't a fix.
 
 ## Sending
 
