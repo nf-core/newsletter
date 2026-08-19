@@ -29,6 +29,11 @@ _DEFAULTS: dict[str, str | None] = {
     "CONFIRM_TOKEN_SECRET_PARAM": "/nf-core-newsletter/CONFIRM_TOKEN_SECRET",
     # Set on the subscribe Lambda only, once the HTTP API endpoint is known.
     "CONFIRM_URL_BASE": None,
+    # Staged-rollout switch for Turnstile CAPTCHA verification (subscribe Lambda
+    # only). Unset/empty = verification skipped, endpoint unprotected — see
+    # handlers/subscribe.py `_verify_turnstile`. No default: this must be either
+    # absent (enforcement off) or the real SSM param path (enforcement on).
+    "TURNSTILE_SECRET_PARAM": None,
     # Per-recipient send throttle (emails/sec). Matches the account's SES max
     # send rate; bump this if/when AWS raises the account rate.
     "SEND_RATE_PER_SEC": "14",

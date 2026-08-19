@@ -64,6 +64,18 @@ LOGO_URL = "https://nf-co.re/images/logo/nf-core-newsletter-lightbg.png"
 # Pre-created SSM SecureString — HMAC key used to sign/verify confirm tokens.
 CONFIRM_TOKEN_SECRET_PARAM = "/nf-core-newsletter/CONFIRM_TOKEN_SECRET"
 
+# Pre-created SSM SecureString — Cloudflare Turnstile secret key, used by the
+# subscribe Lambda to verify CAPTCHA tokens (see README "Turnstile CAPTCHA").
+TURNSTILE_SECRET_PARAM = "/nf-core-newsletter/TURNSTILE_SECRET"
+
+# Enforcement on/off switch for Turnstile. False = the subscribe Lambda gets no
+# TURNSTILE_SECRET_PARAM env var, so it skips verification entirely (see
+# handlers/subscribe.py) — the endpoint is unprotected. Flip to True (or pass
+# `-c enable_turnstile=true` at deploy time) once the website form ships the
+# widget and is sending `cf-turnstile-response`. Default False here because the
+# form isn't live yet.
+ENABLE_TURNSTILE = False
+
 # Monthly send: 09:00 UTC on the first Wednesday of every month.
 # `4#1` = first Wednesday (AWS cron day-of-week is Sun=1 … Sat=7).
 SEND_SCHEDULE = "cron(0 9 ? * 4#1 *)"
@@ -183,10 +195,23 @@ class NfCoreNewsletterStack(Stack):
                 )
             )
 
+        def grant_turnstile_secret(fn: lambda_.Function) -> None:
+            fn.add_to_role_policy(
+                iam.PolicyStatement(
+                    actions=["ssm:GetParameter"],
+                    resources=[
+                        f"arn:aws:ssm:{self.region}:{self.account}:parameter{TURNSTILE_SECRET_PARAM}",
+                    ],
+                )
+            )
+
         # subscribe: create/update an unconfirmed contact + send the confirm email
         grant_contact(subscribe_fn, ["ses:CreateContact", "ses:GetContact", "ses:UpdateContact"])
         grant_send(subscribe_fn)
         grant_token_secret(subscribe_fn)
+        # Granted regardless of ENABLE_TURNSTILE so flipping enforcement on later
+        # is an env-var-only change, with no IAM/deploy dependency ordering.
+        grant_turnstile_secret(subscribe_fn)
 
         # confirm: verify the token, flip the contact to OPT_IN on the topic
         grant_contact(confirm_fn, ["ses:GetContact", "ses:UpdateContact"])
@@ -254,6 +279,15 @@ class NfCoreNewsletterStack(Stack):
         # The subscribe Lambda builds confirmation links pointing back at /confirm.
         subscribe_fn.add_environment("CONFIRM_URL_BASE", f"{http_api.api_endpoint}/confirm")
 
+        # Turnstile enforcement toggle: only set TURNSTILE_SECRET_PARAM when
+        # enforcement is on. Unset = subscribe Lambda skips verification (see
+        # handlers/subscribe.py). Override per-deploy without touching this file:
+        #   cdk deploy -c enable_turnstile=true
+        enable_turnstile_ctx = self.node.try_get_context("enable_turnstile")
+        enable_turnstile = ENABLE_TURNSTILE if enable_turnstile_ctx is None else str(enable_turnstile_ctx) == "true"
+        if enable_turnstile:
+            subscribe_fn.add_environment("TURNSTILE_SECRET_PARAM", TURNSTILE_SECRET_PARAM)
+
         # ── Monthly send schedule (EventBridge Scheduler) ────────────────────
         scheduler_role = iam.Role(
             self,
@@ -283,7 +317,7 @@ class NfCoreNewsletterStack(Stack):
         alarm_topic = sns.Topic(self, "ReputationAlarmTopic", display_name="nf-core newsletter SES reputation")
         alarm_action = cw_actions.SnsAction(alarm_topic)
 
-        def reputation_alarm(id: str, metric_name: str, threshold: float) -> None:
+        def reputation_alarm(alarm_id: str, metric_name: str, threshold: float) -> None:
             metric = cloudwatch.Metric(
                 namespace="AWS/SES",
                 metric_name=metric_name,
@@ -292,7 +326,7 @@ class NfCoreNewsletterStack(Stack):
             )
             alarm = cloudwatch.Alarm(
                 self,
-                id,
+                alarm_id,
                 metric=metric,
                 threshold=threshold,
                 evaluation_periods=1,

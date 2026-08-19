@@ -13,11 +13,34 @@ if TYPE_CHECKING:
     import pytest
 
 
-def _event(email: Any, ip: str = "1.2.3.4") -> dict[str, Any]:
+def _event(email: Any, ip: str = "1.2.3.4", **extra_body: Any) -> dict[str, Any]:
     return {
-        "body": json.dumps({"email": email}),
+        "body": json.dumps({"email": email, **extra_body}),
         "requestContext": {"http": {"sourceIp": ip}},
     }
+
+
+def _stub_ses_for_send(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Wire up ses so a request that passes verification reaches send_email."""
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "get_contact", lambda _email: None)
+    monkeypatch.setattr(ses, "upsert_unconfirmed", lambda *a: None)
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs) or "msg-1")
+    return sent
+
+
+class _FakeTurnstileResponse:
+    def __init__(self, body: dict[str, Any]) -> None:
+        self._body = json.dumps(body).encode()
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _FakeTurnstileResponse:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
 
 
 def test_invalid_email_returns_400() -> None:
@@ -122,3 +145,77 @@ def test_missing_signup_at_does_not_crash_and_sends(monkeypatch: pytest.MonkeyPa
 
 def test_malformed_signup_at_does_not_crash_and_sends(monkeypatch: pytest.MonkeyPatch) -> None:
     _check_sends_despite_bad_signup_at(monkeypatch, _unconfirmed_contact("not-a-timestamp"))
+
+
+# ── Turnstile CAPTCHA verification ───────────────────────────────────────────
+
+
+def test_turnstile_unconfigured_skips_verification_and_sends(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TURNSTILE_SECRET_PARAM", raising=False)
+    sent = _stub_ses_for_send(monkeypatch)
+
+    resp = subscribe.handler(_event("a@b.com"), None)
+
+    assert resp["statusCode"] == 200
+    assert len(sent) == 1
+
+
+def test_turnstile_valid_token_proceeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURNSTILE_SECRET_PARAM", "/nf-core-newsletter/TURNSTILE_SECRET")
+    monkeypatch.setattr(subscribe, "get_secret", lambda _param: "turnstile-secret")
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **kw: _FakeTurnstileResponse({"success": True}))
+    sent = _stub_ses_for_send(monkeypatch)
+
+    resp = subscribe.handler(_event("a@b.com", **{"cf-turnstile-response": "good-token"}), None)
+
+    assert resp["statusCode"] == 200
+    assert len(sent) == 1
+
+
+def test_turnstile_missing_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURNSTILE_SECRET_PARAM", "/nf-core-newsletter/TURNSTILE_SECRET")
+
+    def _fail_if_called(*a: Any, **kw: Any) -> Any:
+        raise AssertionError("Cloudflare must not be contacted when the token is missing")
+
+    monkeypatch.setattr("urllib.request.urlopen", _fail_if_called)
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = subscribe.handler(_event("a@b.com"), None)
+
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"]) == {"error": "captcha_failed"}
+    assert sent == []
+
+
+def test_turnstile_rejected_token_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURNSTILE_SECRET_PARAM", "/nf-core-newsletter/TURNSTILE_SECRET")
+    monkeypatch.setattr(subscribe, "get_secret", lambda _param: "turnstile-secret")
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **kw: _FakeTurnstileResponse({"success": False}))
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = subscribe.handler(_event("a@b.com", **{"cf-turnstile-response": "bad-token"}), None)
+
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"]) == {"error": "captcha_failed"}
+    assert sent == []
+
+
+def test_turnstile_unreachable_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TURNSTILE_SECRET_PARAM", "/nf-core-newsletter/TURNSTILE_SECRET")
+    monkeypatch.setattr(subscribe, "get_secret", lambda _param: "turnstile-secret")
+
+    def _raise_timeout(*a: Any, **kw: Any) -> Any:
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", _raise_timeout)
+    sent: list[Any] = []
+    monkeypatch.setattr(ses, "send_email", lambda **kwargs: sent.append(kwargs))
+
+    resp = subscribe.handler(_event("a@b.com", **{"cf-turnstile-response": "some-token"}), None)
+
+    assert resp["statusCode"] == 400
+    assert json.loads(resp["body"]) == {"error": "captcha_failed"}
+    assert sent == []

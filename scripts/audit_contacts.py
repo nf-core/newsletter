@@ -260,16 +260,12 @@ def fetch_contact_attributes(client: Any, list_name: str, email: str, max_attemp
 
 def build_report(client: Any, list_name: str, topic_name: str, workers: int) -> dict[str, Any]:
     all_contacts = list_all_contacts(client, list_name)
-    opt_in_emails = [
-        c["EmailAddress"] for c in all_contacts if topic_subscription_status(c, topic_name) == OPT_IN
-    ]
+    opt_in_emails = [c["EmailAddress"] for c in all_contacts if topic_subscription_status(c, topic_name) == OPT_IN]
     opt_out_count = len(all_contacts) - len(opt_in_emails)
 
     attrs_by_email: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(fetch_contact_attributes, client, list_name, email): email for email in opt_in_emails
-        }
+        futures = {pool.submit(fetch_contact_attributes, client, list_name, email): email for email in opt_in_emails}
         for fut in as_completed(futures):
             attrs_by_email[futures[fut]] = fut.result()
 
@@ -319,8 +315,7 @@ def print_report(report: dict[str, Any]) -> None:
 
     print(f"Flagged OPT_IN contacts ({len(flagged)}) -- signup_ip is Tor exit and/or datacenter/VPS:")
     header = (
-        f"{'EMAIL':40s} {'SIGNUP_IP':16s} {'CLASS':22s} "
-        f"{'RDNS_HOSTNAME':35s} {'SIGNUP_AT':26s} {'CONFIRMED_AT':26s}"
+        f"{'EMAIL':40s} {'SIGNUP_IP':16s} {'CLASS':22s} {'RDNS_HOSTNAME':35s} {'SIGNUP_AT':26s} {'CONFIRMED_AT':26s}"
     )
     print(header)
     print("-" * len(header))
